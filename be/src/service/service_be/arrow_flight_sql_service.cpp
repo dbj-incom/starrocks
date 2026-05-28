@@ -22,7 +22,6 @@
 #include <base/utility/arrow_utils.h>
 #include <exec/pipeline/query_context.h>
 
-#include "arrow_flight_call_header_utils.h"
 #include "base/uid_util.h"
 #include "common/config.h"
 #include "common/status.h"
@@ -106,8 +105,11 @@ arrow::Result<std::unique_ptr<arrow::flight::FlightDataStream>> ArrowFlightSqlSe
     auto reader = std::make_shared<ArrowFlightBatchReader>(ExecEnv::GetInstance()->result_mgr(), resultfragmentid);
     ARROW_RETURN_NOT_OK(reader->init());
 
-    const std::string header_val =
-            FindKeyValPrefixInCallHeaders(context.incoming_headers(), "x-arrow-ipc-compression", "");
+    std::string header_val;
+    auto it = context.incoming_headers().find("x-arrow-ipc-compression");
+    if (it != context.incoming_headers().end()) {
+        header_val = std::string(it->second);
+    }
     arrow::Compression::type codec = resolve_compression_codec(config::arrow_flight_compression, header_val);
     if (codec != arrow::Compression::UNCOMPRESSED) {
         arrow::ipc::IpcWriteOptions opts = arrow::ipc::IpcWriteOptions::Defaults();
