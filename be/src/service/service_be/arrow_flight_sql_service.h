@@ -18,6 +18,7 @@
 #include <arrow/flight/server.h>
 #include <arrow/flight/sql/server.h>
 #include <arrow/flight/types.h>
+#include <arrow/util/compression.h>
 
 #include "arrow_flight_auth_server_middleware.h"
 #include "common/status.h"
@@ -36,6 +37,13 @@ public:
     arrow::Result<std::unique_ptr<arrow::flight::FlightDataStream>> DoGetStatement(
             const arrow::flight::ServerCallContext& context,
             const arrow::flight::sql::StatementQueryTicket& command) override;
+
+    // Maps a compression name to the Arrow codec type. Returns UNCOMPRESSED for unknown values.
+    static arrow::Compression::type resolve_compression_codec(const std::string& name);
+
+    // Two-argument form: header_override wins when non-empty, otherwise falls back to config_val.
+    static arrow::Compression::type resolve_compression_codec(const std::string& config_val,
+                                                              const std::string& header_override);
 
 private:
     static arrow::Result<std::pair<std::string, std::string>> decode_ticket(const std::string& ticket);

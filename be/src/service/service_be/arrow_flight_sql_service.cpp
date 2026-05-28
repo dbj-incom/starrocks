@@ -17,10 +17,15 @@
 #include <arrow/array/builder_binary.h>
 #include <arrow/flight/server.h>
 #include <arrow/flight/types.h>
+#include <arrow/ipc/options.h>
+#include <arrow/util/codec.h>
+#include <arrow/util/compression.h>
 #include <base/utility/arrow_utils.h>
 #include <exec/pipeline/query_context.h>
 
+#include "arrow_flight_call_header_utils.h"
 #include "base/uid_util.h"
+#include "common/config.h"
 #include "common/status.h"
 #include "common/system/backend_options.h"
 #include "exec/arrow_flight_batch_reader.h"
@@ -73,6 +78,17 @@ arrow::Result<std::unique_ptr<arrow::flight::FlightInfo>> ArrowFlightSqlServer::
     return arrow::Status::NotImplemented("GetFlightInfoSchemas Result");
 }
 
+arrow::Compression::type ArrowFlightSqlServer::resolve_compression_codec(const std::string& name) {
+    if (name == "lz4") return arrow::Compression::LZ4_FRAME;
+    if (name == "zstd") return arrow::Compression::ZSTD;
+    return arrow::Compression::UNCOMPRESSED;
+}
+
+arrow::Compression::type ArrowFlightSqlServer::resolve_compression_codec(const std::string& config_val,
+                                                                          const std::string& header_override) {
+    return resolve_compression_codec(header_override.empty() ? config_val : header_override);
+}
+
 arrow::Result<std::unique_ptr<arrow::flight::FlightDataStream>> ArrowFlightSqlServer::DoGetStatement(
         const arrow::flight::ServerCallContext& context, const arrow::flight::sql::StatementQueryTicket& command) {
     ARROW_ASSIGN_OR_RAISE(auto pair, decode_ticket(command.statement_handle));
@@ -90,6 +106,15 @@ arrow::Result<std::unique_ptr<arrow::flight::FlightDataStream>> ArrowFlightSqlSe
 
     auto reader = std::make_shared<ArrowFlightBatchReader>(ExecEnv::GetInstance()->result_mgr(), resultfragmentid);
     ARROW_RETURN_NOT_OK(reader->init());
+
+    const std::string header_val =
+            FindKeyValPrefixInCallHeaders(context.incoming_headers(), "x-arrow-ipc-compression", "");
+    arrow::Compression::type codec = resolve_compression_codec(config::arrow_flight_compression, header_val);
+    if (codec != arrow::Compression::UNCOMPRESSED) {
+        arrow::ipc::IpcWriteOptions opts = arrow::ipc::IpcWriteOptions::Defaults();
+        ARROW_ASSIGN_OR_RAISE(opts.codec, arrow::util::Codec::Create(codec));
+        return std::make_unique<arrow::flight::RecordBatchStream>(reader, opts);
+    }
     return std::make_unique<arrow::flight::RecordBatchStream>(reader);
 }
 
