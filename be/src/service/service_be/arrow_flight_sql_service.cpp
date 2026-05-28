@@ -18,7 +18,6 @@
 #include <arrow/flight/server.h>
 #include <arrow/flight/types.h>
 #include <arrow/ipc/options.h>
-#include <arrow/util/codec.h>
 #include <arrow/util/compression.h>
 #include <base/utility/arrow_utils.h>
 #include <exec/pipeline/query_context.h>
